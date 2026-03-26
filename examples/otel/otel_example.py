@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import ntptime
+import wifi
 
 OTEL_EXPORTER_OTLP_ENDPOINT ="http://192.168.8.192:4318"
 
