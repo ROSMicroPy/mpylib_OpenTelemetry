@@ -1,6 +1,6 @@
 {
     "name": "Micropython Open Telemetry SDK",
-    "version": "1.0",
+    "version": "1.1",
     "urls": [
         [
             "otel/__init__.py",
