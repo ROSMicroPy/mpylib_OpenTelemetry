@@ -30,7 +30,16 @@ _SEVERITY_NUMBER_MAP = {
 
 
 def _debug_export_error(exc):
-    if os.getenv("OTEL_EXPORT_DEBUG") in ("1", "true", "TRUE", "yes", "YES"):
+    debug_value = None
+    getenv = getattr(os, "getenv", None)
+    if callable(getenv):
+        debug_value = getenv("OTEL_EXPORT_DEBUG")
+    elif hasattr(os, "environ"):
+        try:
+            debug_value = os.environ.get("OTEL_EXPORT_DEBUG")
+        except Exception:
+            debug_value = None
+    if debug_value in ("1", "true", "TRUE", "yes", "YES"):
         try:
             import sys
 

@@ -1,54 +1,54 @@
 {
     "name": "Micropython Open Telemetry SDK",
-    "version": "1.1",
+    "version": "1.2",
     "urls": [
         [
             "otel/__init__.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/__init__.py"
+            "./src/__init__.py"
         ],
         [
             "otel/api.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/api.py"
+            "./src/api.py"
         ],
         [
             "otel/context.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/context.py"
+            "./src/context.py"
         ],
         [
             "otel/exporter.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/exporter.py"
+            "./src/exporter.py"
         ],
         [
             "otel/http.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/http.py"
+            "./src/http.py"
         ],
         [
             "otel/processor.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/processor.py"
+            "./src/processor.py"
         ],
         [
             "otel/propagation.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/propagation.py"
+            "./src/propagation.py"
         ],
         [
             "otel/trace.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/trace.py"
+            "./src/trace.py"
         ],
         [
             "otel/util.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/util.py"
+            "./src/util.py"
         ],
         [
             "otel/logging.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/logging.py"
+            "./src/logging.py"
         ],
         [
             "otel/metric.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/src/metric.py"
+            "./src/metric.py"
         ],
         [
             "examples/otel/otel_example.py",
-            "https://gitlab.com/robot-primitives/micropython_modules/mp_opentelemetry/-/raw/main/examples/otel/otel_example.py"
+            "./examples/otel/otel_example.py"
         ]
     ]
 }
