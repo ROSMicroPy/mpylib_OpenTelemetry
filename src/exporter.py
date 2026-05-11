@@ -27,19 +27,49 @@ _SEVERITY_NUMBER_MAP = {
     "ERROR": 17,
     "FATAL": 21,
 }
+_EXPORT_DEBUG_ENABLED = False
+_EXPORT_DEBUG_LOG_PATH = "/otel_logs.txt"
+
+
+def configure_debug(enabled=False, log_path=None):
+    global _EXPORT_DEBUG_ENABLED, _EXPORT_DEBUG_LOG_PATH
+    _EXPORT_DEBUG_ENABLED = bool(enabled)
+    if log_path:
+        _EXPORT_DEBUG_LOG_PATH = str(log_path)
+
+
+def _getenv(name):
+    getenv = getattr(os, "getenv", None)
+    if callable(getenv):
+        return getenv(name)
+    if hasattr(os, "environ"):
+        try:
+            return os.environ.get(name)
+        except Exception:
+            return None
+    return None
+
+
+def _is_debug_enabled():
+    if _EXPORT_DEBUG_ENABLED:
+        return True
+    debug_value = _getenv("OTEL_EXPORT_DEBUG")
+    return debug_value in ("1", "true", "TRUE", "yes", "YES")
+
+
+def _debug_log(message):
+    if not _is_debug_enabled():
+        return
+    try:
+        with open(_EXPORT_DEBUG_LOG_PATH, "a") as handle:
+            handle.write("{}\n".format(str(message)))
+    except Exception:
+        pass
 
 
 def _debug_export_error(exc):
-    debug_value = None
-    getenv = getattr(os, "getenv", None)
-    if callable(getenv):
-        debug_value = getenv("OTEL_EXPORT_DEBUG")
-    elif hasattr(os, "environ"):
-        try:
-            debug_value = os.environ.get("OTEL_EXPORT_DEBUG")
-        except Exception:
-            debug_value = None
-    if debug_value in ("1", "true", "TRUE", "yes", "YES"):
+    _debug_log("otel export failed: {}".format(exc))
+    if _is_debug_enabled():
         try:
             import sys
 
@@ -48,8 +78,16 @@ def _debug_export_error(exc):
             pass
 
 
-def _post_json(endpoint, payload, headers=None, timeout_s=2):
+def _post_json(endpoint, payload, headers=None, timeout_s=2, signal_name="otlp"):
     body = json.dumps(payload)
+    _debug_log(
+        "otel export start signal={} endpoint={} bytes={} timeout_s={}".format(
+            signal_name,
+            endpoint,
+            len(body),
+            timeout_s,
+        )
+    )
 
     # Prefer MicroPython urequests, fallback to urllib for host-side testing.
     try:
@@ -63,6 +101,13 @@ def _post_json(endpoint, payload, headers=None, timeout_s=2):
                 timeout=timeout_s,
             )
             status = getattr(response, "status_code", 0)
+            _debug_log(
+                "otel export done signal={} endpoint={} status={}".format(
+                    signal_name,
+                    endpoint,
+                    status,
+                )
+            )
             if hasattr(response, "close"):
                 response.close()
             return status
@@ -80,7 +125,15 @@ def _post_json(endpoint, payload, headers=None, timeout_s=2):
                 method="POST",
             )
             with request.urlopen(req, timeout=timeout_s) as response:
-                return response.getcode()
+                status = response.getcode()
+                _debug_log(
+                    "otel export done signal={} endpoint={} status={}".format(
+                        signal_name,
+                        endpoint,
+                        status,
+                    )
+                )
+                return status
         except Exception as exc:
             _debug_export_error(exc)
             return 0
@@ -295,16 +348,16 @@ class _BaseHTTPExporter:
 class HTTPSpanExporter(_BaseHTTPExporter):
     def export(self, spans, resource=None):
         payload = _trace_payload(spans, resource=resource)
-        return _post_json(self.endpoint, payload, self.headers, self.timeout_s)
+        return _post_json(self.endpoint, payload, self.headers, self.timeout_s, signal_name="traces")
 
 
 class HTTPLogExporter(_BaseHTTPExporter):
     def export(self, records, resource=None):
         payload = _log_payload(records, resource=resource)
-        return _post_json(self.endpoint, payload, self.headers, self.timeout_s)
+        return _post_json(self.endpoint, payload, self.headers, self.timeout_s, signal_name="logs")
 
 
 class HTTPMetricExporter(_BaseHTTPExporter):
     def export(self, metrics, resource=None):
         payload = _metric_payload(metrics, resource=resource)
-        return _post_json(self.endpoint, payload, self.headers, self.timeout_s)
+        return _post_json(self.endpoint, payload, self.headers, self.timeout_s, signal_name="metrics")
