@@ -46,3 +46,22 @@ with tracer.start_as_current_span("sample") as span:
 ```
 
 For a fuller example, see the repository example code.
+
+## Async export
+
+For latency-sensitive code paths, `setup_otlp()` can queue spans and log records and export them from a background thread:
+
+```python
+from otel import setup_otlp
+
+setup = setup_otlp(
+    endpoint="http://collector.local:4318",
+    service_name="sensor-node",
+    async_export=True,
+    async_batch_size=16,
+    async_queue_size=128,
+    async_flush_interval_ms=200,
+)
+```
+
+Queued export preserves the original timestamps already stored on each `Span` and `LogRecord`. Export time does not overwrite record creation or span end time.
