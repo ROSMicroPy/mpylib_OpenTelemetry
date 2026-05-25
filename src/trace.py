@@ -19,6 +19,15 @@ def _telemetry_enabled():
         return True
 
 
+def _should_emit_span(name):
+    try:
+        from .api import should_emit_span
+
+        return should_emit_span(name)
+    except Exception:
+        return True
+
+
 class NoOpSpan:
     trace_id = None
     span_id = None
@@ -150,7 +159,7 @@ class Tracer:
         self.name = name
 
     def start_span(self, name, parent_context=None, attributes=None, kind=None):
-        if not _telemetry_enabled():
+        if not _telemetry_enabled() or not _should_emit_span(name):
             return _NOOP_SPAN
         parent = parent_context or get_current_span_context()
         if parent is None:
