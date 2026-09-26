@@ -1,0 +1,43 @@
+
+<h2 id="http-context">Continue an incoming HTTP trace</h2><p><code>extract_traceparent()</code> returns a dictionary, not a <code>SpanContext</code>. Convert it before passing it to a tracer. The helper looks for the lowercase <code>traceparent</code> key.</p><pre><code class="language-python">from otel import SpanContext, extract_traceparent, get_tracer
+
+headers = {
+    &quot;traceparent&quot;: &quot;00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01&quot;
+}
+parts = extract_traceparent(headers)
+parent = None
+if parts:
+    parent = SpanContext(
+        trace_id=parts[&quot;trace_id&quot;],
+        span_id=parts[&quot;span_id&quot;],
+        trace_flags=parts[&quot;trace_flags&quot;],
+        is_remote=True,
+    )
+
+tracer = get_tracer(&quot;receiver&quot;)
+with tracer.start_as_current_span(&quot;command.receive&quot;, parent_context=parent):
+    pass</code></pre><div class="callout caution"><p><strong>Validate at the boundary.</strong> Extraction only checks the number of hyphen-separated parts. It does not validate hexadecimal lengths, nonzero IDs, version, or flags. <code>SpanContext.is_valid()</code> checks only that IDs are nonempty. Normalize and validate incoming headers before trusting them in production.</p></div>
+<h2 id="outgoing">Inject an outgoing header</h2><pre><code class="language-python">from otel import inject_traceparent, get_tracer
+
+tracer = get_tracer(&quot;sender&quot;)
+with tracer.start_as_current_span(&quot;command.send&quot;) as span:
+    headers = {&quot;Content-Type&quot;: &quot;application/json&quot;}
+    if span.context is not None:
+        inject_traceparent(headers, span=span)
+    # Pass headers to your HTTP client&#x27;s request.</code></pre><p>Injection mutates and returns the header dictionary. When no context exists it leaves the dictionary unchanged. Passing a no-op span explicitly can produce invalid identifiers, so guard it as above. The implementation does not include baggage or <code>tracestate</code>.</p>
+<h2 id="message-carriers">Carry context in a message</h2><p>For JSON messages, use the nested <code>otel</code> carrier field. Choose a different <code>field</code> value if that name conflicts with your payload.</p><pre><code class="language-python">from otel import (
+    attach_span_context, extract_from_carrier,
+    get_tracer, inject_to_carrier,
+)
+
+tracer = get_tracer(&quot;messages&quot;)
+with tracer.start_as_current_span(&quot;command.publish&quot;):
+    message = {&quot;command&quot;: &quot;move&quot;}
+    inject_to_carrier(message)
+
+# On the receiving device, after decoding the message:
+parent = extract_from_carrier(message)
+with attach_span_context(parent):
+    with tracer.start_as_current_span(&quot;command.consume&quot;):
+        pass</code></pre><p>The carrier contains <code>trace_id</code>, <code>span_id</code>, and <code>trace_flags</code>. Extraction returns a remote <code>SpanContext</code> or <code>None</code> if required fields are absent.</p>
+<h2 id="concurrency">Context is global</h2><p>The current span lives in one module-level variable. It is neither thread-local nor task-local. Avoid interleaving active span scopes across threads or asynchronous tasks. Pass explicit parent contexts where useful, but do not assume that doing so isolates the global context used by log correlation.</p><p>New span contexts use the default <code>01</code> flags; remote flags are not implemented as a sampling policy. Treat these helpers as basic correlation utilities rather than a full W3C validation and sampling implementation.</p>

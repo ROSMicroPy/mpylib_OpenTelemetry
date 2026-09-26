@@ -1,0 +1,33 @@
+
+<h2 id="prerequisites">1. Prepare the device and receiver</h2><ul><li>A MicroPython board with a working network connection and enough free heap for JSON payloads.</li><li><code>mip</code> for installation and a requests module importable as <code>urequests</code>, supporting <code>get</code>, <code>post</code>, <code>request</code>, and the <code>timeout</code> argument.</li><li>An HTTP receiver reachable from the board with traces, logs, and metrics routes, conventionally on port <code>4318</code>.</li><li>A synchronized clock. Configure the board RTC or run <code>ntptime.settime()</code> after network setup and before creating telemetry.</li></ul><p>Connect Wi-Fi or Ethernet using your board's normal setup. The SDK does not configure networking. Use your receiver's IP address or a hostname that the board can resolve; <code>localhost</code> on the board means the board itself.</p>
+<h2 id="install">2. Install the package</h2><p>Run this in the device REPL. <a href="https://docs.micropython.org/en/latest/reference/packages.html">MicroPython mip</a> reads the package manifest, which maps the repository's <code>src/</code> files into the <code>otel</code> package:</p><pre><code class="language-python">import mip
+mip.install(&quot;github:ROSMicroPy/mpylib_OpenTelemetry&quot;, version=&quot;main&quot;)
+import otel</code></pre><p>For reproducible deployments, replace <code>main</code> with a tested commit or release ref. The repository's <code>package.json</code> is a MicroPython mip manifest, not an npm dependency file. If mip is unavailable, copy all files from <code>src/</code> to <code>/lib/otel/</code> on the device, including <code>__init__.py</code>.</p><p>If importing <code>urequests</code> fails, install a requests implementation compatible with your firmware before continuing. The HTTP code's <code>urllib</code> fallback is intended for CPython environments.</p>
+<h2 id="first-signals">3. Send all three signals</h2><p>Replace the example address with your receiver. Run after network and clock setup:</p><pre><code class="language-python">from otel import setup_otlp, get_tracer, get_logger, get_meter
+
+setup = setup_otlp(
+    endpoint=&quot;http://192.168.1.100:4318&quot;,
+    service_name=&quot;sensor-node&quot;,
+    resource={&quot;device.id&quot;: &quot;esp32-01&quot;},
+)
+
+if setup[&quot;enabled&quot;]:
+    tracer = get_tracer(&quot;sensor-loop&quot;)
+    logger = get_logger(&quot;sensor-loop&quot;)
+    meter = get_meter(&quot;sensor-loop&quot;)
+    samples = meter.create_counter(&quot;sensor.samples&quot;, unit=&quot;1&quot;)
+    temperature = meter.create_gauge(&quot;sensor.temperature&quot;, unit=&quot;Cel&quot;)
+
+    with tracer.start_as_current_span(&quot;sample&quot;) as span:
+        span.set_attribute(&quot;sensor.name&quot;, &quot;ambient&quot;)
+        samples.add(1)
+        temperature.set(23.5)
+        logger.info(&quot;sample complete&quot;, {&quot;temperature&quot;: 23.5})
+        span.set_status(&quot;OK&quot;)
+
+    status = setup[&quot;metric_reader&quot;].collect()
+    print(&quot;Metric HTTP status:&quot;, status)
+else:
+    print(&quot;Receiver unavailable; telemetry is disabled&quot;)</code></pre><div class="callout"><p><strong>Expected behavior:</strong> the root span exports when the <code>with</code> block ends; the log exports when emitted; metrics export only when <code>collect()</code> is called. The log includes the active span's trace and span IDs.</p></div>
+<h2 id="verify">4. Verify reception</h2><ol><li>Check that <code>setup["enabled"]</code> is true. Setup probes the base endpoint using HTTP GET.</li><li>Check receiver ingestion logs for POSTs to <code>/v1/traces</code>, <code>/v1/logs</code>, and <code>/v1/metrics</code>.</li><li>In your backend, select service <code>sensor-node</code> and the current time range. Look for span <code>sample</code>, log <code>sample complete</code>, and metric <code>sensor.samples</code>.</li></ol><p>A successful probe establishes reachability only. Even an HTTP error response can pass the probe. Confirm the POST endpoints accept the payloads; a nonzero returned status does not necessarily mean success.</p>
+<h2 id="next">Adapt the example</h2><p>Create instruments once and update them in your application loop. Schedule metric collection at a rate your device and network can afford. The <a href="https://github.com/ROSMicroPy/mpylib_OpenTelemetry/blob/main/examples/otel/otel_example.py">repository example</a> also demonstrates NTP and HTTP instrumentation; its <code>wifi</code> import and receiver address are environment-specific.</p>

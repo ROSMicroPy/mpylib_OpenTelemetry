@@ -1,0 +1,54 @@
+
+<h2 id="setup">Configure once at startup</h2><p><code>setup_otlp()</code> probes the receiver, creates providers and exporters, registers them globally, and returns their handles. Call it after the network and clock are ready, before obtaining your tracer, logger, and meter.</p><pre><code class="language-python">from otel import setup_otlp
+
+setup = setup_otlp(
+    endpoint=&quot;http://192.168.1.100:4318&quot;,
+    service_name=&quot;robot-controller&quot;,
+    resource={&quot;device.id&quot;: &quot;robot-01&quot;, &quot;deployment.environment&quot;: &quot;lab&quot;},
+    timeout_s=2,
+    async_export=True,
+    async_batch_size=16,
+    async_queue_size=128,
+    async_flush_interval_ms=200,
+    log_level=&quot;INFO&quot;,
+    probe_max_attempts=3,
+    probe_retry_delay_s=1,
+)</code></pre><h2 id="options">All setup options</h2><div class="table-wrap"><table><thead><tr><th scope="col">Parameter</th><th scope="col">Default</th><th scope="col">Behavior</th></tr></thead><tbody><tr><td><code>endpoint</code></td><td>Required</td><td>Base HTTP(S) URL; pass the base URL so all three signal paths resolve correctly.</td></tr><tr><td><code>service_name</code></td><td>Required</td><td>Initial <code>service.name</code> resource value, converted to a string.</td></tr><tr><td><code>timeout_s</code></td><td><code>2</code></td><td>Timeout passed to probe and export HTTP requests.</td></tr><tr><td><code>trace_path</code></td><td><code>/v1/traces</code></td><td>Trace export path.</td></tr><tr><td><code>metric_path</code></td><td><code>/v1/metrics</code></td><td>Metric export path.</td></tr><tr><td><code>log_path</code></td><td><code>/v1/logs</code></td><td>Log export path.</td></tr><tr><td><code>resource</code></td><td><code>None</code></td><td>Extra resource attributes; can override <code>service.name</code>.</td></tr><tr><td><code>async_export</code></td><td><code>False</code></td><td>Request threaded span/log queues. Metrics remain explicit and synchronous.</td></tr><tr><td><code>async_batch_size</code></td><td><code>16</code></td><td>Queued batch size; also configures the synchronous span batch size.</td></tr><tr><td><code>async_queue_size</code></td><td><code>128</code></td><td>Maximum pending entries per queued processor, not a byte limit.</td></tr><tr><td><code>async_flush_interval_ms</code></td><td><code>200</code></td><td>Worker sleep between drains; not a guaranteed delivery deadline.</td></tr><tr><td><code>log_level</code></td><td><code>None</code></td><td>Use the global threshold, initially <code>DEBUG</code>. Accepts DEBUG, INFO, WARN/WARNING, ERROR.</td></tr><tr><td><code>log_fallback_handler</code></td><td><code>None</code></td><td>Use the existing global callback, if any. Callback signature: <code>handler(record, resource=None)</code>.</td></tr><tr><td><code>probe_max_attempts</code></td><td><code>1</code></td><td>Startup probe attempts, clamped to at least one.</td></tr><tr><td><code>probe_retry_delay_s</code></td><td><code>0</code></td><td>Nonnegative integer seconds between failed startup probes.</td></tr></tbody></table></div>
+<h2 id="result">Use the returned handles</h2><p>The result always includes <code>enabled</code>, <code>resource</code>, <code>tracer_provider</code>, <code>logger_provider</code>, <code>meter_provider</code>, and <code>metric_reader</code>. Successful setup also includes <code>span_processor</code>, <code>log_processor</code>, and <code>async_export</code>.</p><p>A failed probe disables telemetry and returns no-op providers and a no-op reader. Check <code>enabled</code> before accessing processor keys. The returned <code>async_export</code> flag reflects the request, not worker availability; a port without working <code>_thread</code> falls back to simple processors.</p><pre><code class="language-python">if setup[&quot;enabled&quot;]:
+    for name in (&quot;span_processor&quot;, &quot;log_processor&quot;):
+        processor = setup[name]
+        if hasattr(processor, &quot;snapshot&quot;):
+            print(name, processor.snapshot())
+        else:
+            print(name, &quot;synchronous processor&quot;)</code></pre>
+<h2 id="filtering">Control detail at runtime</h2><pre><code class="language-python">from otel import set_log_level, set_trace_detail_mode
+
+set_log_level(&quot;WARN&quot;)
+set_trace_detail_mode(&quot;essential&quot;, essential_prefixes=(&quot;command.&quot;, &quot;fault.&quot;))
+# Return to all spans when diagnosing a problem:
+set_trace_detail_mode(&quot;diagnostic&quot;)</code></pre><p>Essential mode matches span-name prefixes. An empty prefix list allows all spans, even in essential mode. Invalid trace modes become <code>diagnostic</code>; invalid log levels become <code>DEBUG</code>. Passing no prefixes preserves the previous prefix list.</p>
+<h2 id="fallback">Handle failed log exports</h2><pre><code class="language-python">from otel import set_log_fallback_handler
+
+def local_log(record, resource=None):
+    print(record.severity_text, record.body)
+
+set_log_fallback_handler(local_log)</code></pre><p>Fallback runs for a falsey export result while telemetry remains enabled. It does not run for every non-2xx response or when telemetry is globally disabled. Keep the handler small and do not send it back through the same telemetry logger.</p>
+<h2 id="custom-exporters">Custom headers and manual setup</h2><p>The convenience setup does not accept authentication headers. For a protected endpoint, construct exporters and providers explicitly; repeat the same pattern with <code>LoggerProvider</code>/<code>SimpleLogProcessor</code> and <code>MeterProvider</code>/<code>MetricReader</code> if you need the other signals.</p><pre><code class="language-python">from otel import (
+    TracerProvider, SimpleSpanProcessor, HTTPSpanExporter,
+    set_tracer_provider,
+)
+
+# Load this from your device&#x27;s deployment configuration.
+receiver_token = &quot;replace-with-your-token&quot;
+provider = TracerProvider(resource={&quot;service.name&quot;: &quot;sensor-node&quot;})
+exporter = HTTPSpanExporter(
+    endpoint=&quot;https://collector.example.com/v1/traces&quot;,
+    headers={
+        &quot;Content-Type&quot;: &quot;application/json&quot;,
+        &quot;Authorization&quot;: &quot;Bearer &quot; + receiver_token,
+    },
+    timeout_s=2,
+)
+provider.add_span_processor(SimpleSpanProcessor(exporter))
+set_tracer_provider(provider)</code></pre><p>Manual construction does not probe the endpoint or automatically enable previously disabled telemetry. Use HTTPS support and credential storage appropriate for your firmware.</p>
+<h2 id="lifecycle">Disable, recover, and shut down</h2><p><code>disable_telemetry()</code> gates emission; <code>enable_telemetry()</code> only flips that gate. There is no automatic reconnect loop. After a failed setup, restore connectivity and run setup again, then reacquire your tracer, logger, meter, and instruments. Existing no-op objects remain no-op.</p><p>Before replacing a successful setup, shut down its providers to avoid leaving old worker threads running. Collect final metrics before shutting down the meter provider. Provider <code>shutdown()</code> delegates to processors/readers; it does not turn off the global flag or join worker threads. Queued flush can block on repeated failures—see <a href="internals.html#processors">processor semantics</a>.</p>

@@ -2,7 +2,11 @@
 
 `mp_opentelemetry` brings traces, logs, and metrics into MicroPython without dragging in a heavyweight observability stack. It is deliberately compact, but it still maps onto familiar OpenTelemetry concepts closely enough to make embedded telemetry useful and portable.
 
-**Project URL**: https://gitlab.com/robot-primitives/Micropython_Modules/mp_opentelemetry
+**Project URL**: https://github.com/ROSMicroPy/mpylib_OpenTelemetry
+
+**Documentation**: [User guide](https://rosmicropy.github.io/mpylib_OpenTelemetry/) · [Build and publish the docs](pages/README.md)
+
+The documentation covers the project objective, getting started, configuration, instrumentation, propagation, technical details, API reference, and troubleshooting.
 
 > **Standout:** gives constrained MicroPython systems a practical observability surface instead of treating telemetry as something only full Linux devices deserve.
 
@@ -18,7 +22,7 @@
 
 ```python
 import mip
-mip.install("https://gitlab.com/robot-primitives/Micropython_Modules/mp_opentelemetry/-/raw/main/package.json")
+mip.install("github:ROSMicroPy/mpylib_OpenTelemetry", version="main")
 ```
 
 The package installs as `otel` on the device.

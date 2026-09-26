@@ -1,0 +1,44 @@
+
+<p>The following patterns assume a successful <a href="getting-started.html#first-signals">setup</a>. Keep names stable, choose low-cardinality attributes, and create instruments once.</p>
+<h2 id="traces">Trace a unit of work</h2><pre><code class="language-python">from otel import get_tracer
+
+tracer = get_tracer(&quot;controller&quot;)
+with tracer.start_as_current_span(&quot;command.execute&quot;) as command:
+    command.set_attribute(&quot;command.type&quot;, &quot;move&quot;)
+    with tracer.start_as_current_span(&quot;motor.update&quot;) as motor:
+        motor.add_event(&quot;target accepted&quot;, {&quot;position&quot;: 120})
+        motor.set_status(&quot;OK&quot;)
+    command.set_status(&quot;OK&quot;)</code></pre><p>Entering a span makes it current. Nested spans inherit its trace ID and use its span ID as their parent. Leaving the block ends the span and restores the previous context. An escaping exception is recorded as an event and sets status to <code>ERROR</code>; it still propagates to your application.</p><p><code>start_span()</code> returns a span without making it current. Call <code>end()</code> yourself or use it in a <code>with</code> block. Calling <code>end()</code> again has no effect on an already-ended real span. Use status strings <code>UNSET</code>, <code>OK</code>, or <code>ERROR</code>.</p>
+<h2 id="logs">Correlate structured logs</h2><pre><code class="language-python">from otel import get_logger, get_tracer
+
+logger = get_logger(&quot;controller&quot;)
+tracer = get_tracer(&quot;controller&quot;)
+with tracer.start_as_current_span(&quot;command.validate&quot;):
+    logger.info(&quot;received command&quot;, {&quot;command.type&quot;: &quot;move&quot;})
+    logger.warn(&quot;battery low&quot;, {&quot;battery.percent&quot;: 15})</code></pre><p>Messages support <code>debug</code>, <code>info</code>, <code>warn</code>/<code>warning</code>, and <code>error</code>. Logs inside a current span include its identifiers. <code>logger.emit(severity_text, body, attributes=None, span=None)</code> lets you specify an explicit span.</p><p>Real logger methods accept <code>force=True</code> to bypass the severity filter, but no-op loggers do not accept that keyword. Avoid passing it in code that may use a no-op logger. An emitted real log returns a <code>LogRecord</code>; filtered or disabled calls can return <code>True</code>. The return value is not a delivery receipt.</p>
+<h2 id="metrics">Choose an instrument</h2><div class="table-wrap"><table><thead><tr><th scope="col">Instrument</th><th scope="col">Update</th><th scope="col">Use for</th></tr></thead><tbody><tr><td>Counter</td><td><code>add(amount, attributes=None)</code></td><td>Cumulative nonnegative counts, such as samples. Negative values are not rejected by code; keep updates nonnegative.</td></tr><tr><td>UpDownCounter</td><td><code>add(amount, attributes=None)</code></td><td>Values that increase and decrease, such as active jobs.</td></tr><tr><td>Gauge</td><td><code>set(value, attributes=None)</code></td><td>The latest measurement for each attribute set, such as temperature.</td></tr><tr><td>Histogram</td><td><code>record(value, attributes=None)</code></td><td>Cumulative count, sum, min, and max. No configurable distribution buckets.</td></tr></tbody></table></div><pre><code class="language-python">from otel import get_meter
+
+meter = get_meter(&quot;controller&quot;)
+commands = meter.create_counter(&quot;commands.total&quot;, unit=&quot;1&quot;)
+active = meter.create_up_down_counter(&quot;commands.active&quot;, unit=&quot;1&quot;)
+voltage = meter.create_gauge(&quot;battery.voltage&quot;, unit=&quot;V&quot;)
+duration = meter.create_histogram(&quot;command.duration&quot;, unit=&quot;ms&quot;)
+
+commands.add(1, {&quot;command.type&quot;: &quot;move&quot;})
+active.add(1)
+voltage.set(12.1)
+duration.record(42.0, {&quot;command.type&quot;: &quot;move&quot;})
+active.add(-1)
+
+# Use the handle returned by setup_otlp().
+setup[&quot;metric_reader&quot;].collect()</code></pre><p>Each distinct attribute combination creates a retained point. Use small, stable scalar values; lists and dictionaries cannot be used in the metric point key. Avoid timestamps, request IDs, or ever-changing values as metric attributes. Counter and histogram values remain cumulative across collection; gauges retain their last value.</p><div class="callout"><p><strong>Collection is explicit.</strong> Call the returned reader's <code>collect()</code> to send data. Calling <code>meter_provider.collect()</code> only returns snapshots. Enabling async export does not schedule or move metric export to a background thread.</p></div>
+<h2 id="http">Instrument an outgoing HTTP call</h2><pre><code class="language-python">from otel import get_tracer, traced_request
+
+tracer = get_tracer(&quot;network&quot;)
+response = traced_request(
+    tracer, &quot;GET&quot;, &quot;http://192.168.1.100:8080/health&quot;, timeout_s=3
+)
+try:
+    print(getattr(response, &quot;status_code&quot;, None))
+finally:
+    response.close()</code></pre><p>The helper creates an <code>HTTP GET</code> span, adds method/URL/status attributes, and injects <code>traceparent</code>. You own and must close the response. The span covers the request call, not later response processing. HTTP error statuses are attributes; they are not automatically mapped to an error span status.</p><p>If an HTTP span is suppressed or telemetry is disabled, the current helper can inject an invalid no-op context. Applications needing strict propagation should guard this helper with <code>should_emit_span()</code> and use their HTTP client directly when the span would be suppressed.</p>
